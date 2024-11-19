@@ -227,7 +227,7 @@ CMSIS是Cortex Microcontroller Software Interface Standard英文首字母缩写�
 
 对函数功能的了解
 
-## 库函数模板创建
+## keil5库函数模板创建
 
 ### 获取固件库
 
