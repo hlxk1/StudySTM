@@ -553,10 +553,226 @@ GPIO_Mode:模式
 
 通过RCC_APB2PeriphClockCmd函数对应参数找到要是能的GPIO端口
 
+```c
+#ifndef _LED_H
+#define _LED_H
+
+#include "stm32f10x.h"
+
+#define LED0_PORT GPIOC // 端口
+#define LED0_PIN GPIO_Pin_13 // 引脚
+#define LED0_PORT_RCC RCC_APB2Periph_GPIOC //时钟
+
+void LED_Init(void);
+
+#endif
+
+```
+
+
+
 ##### 源文件.c
 
 *存放驱动函数*
 
+```c
+#include "led.h"
+
+void LED_Init(){
+	// 结构体定义
+	GPIO_InitTypeDef GPIO_InitStruct;
+	// 开启时钟GPIO挂接的时钟
+	RCC_APB2PeriphClockCmd(LED0_PORT_RCC, ENABLE);
+	// GPIO结构体配置
+	GPIO_InitStruct.GPIO_Mode=GPIO_Mode_Out_PP;
+	GPIO_InitStruct.GPIO_Pin=LED0_PIN;
+	GPIO_InitStruct.GPIO_Speed=GPIO_Speed_50MHz;
+	GPIO_Init(LED0_PORT, &GPIO_InitStruct);
+	// 设置高点电平保证灯灭
+	GPIO_SetBits(LED0_PORT,LED0_PIN);
+	
+}
+
+```
 
 
-##### main.c
+
+##### main.cc
+
+![image-20241121230314827](F:\StudySTM\img\image-20241121230314827.png)
+
+最后从魔术棒设置Debug，Use为CMSIS-DAP Debugger即为仿真器下载
+
+![image-20241121231550561](.\img\image-20241121231550561.png)
+
+![image-20241121232015242](.\img\image-20241121232015242.png)
+
+![image-20241121232112605](.\img\image-20241121232112605.png)
+
+## STM32时钟系统
+
+### 时钟树
+
+![image-20241121231012231](.\img\image-20241121231012231.png)
+
+图中有5种时钟源
+
+H代表高速，L代表低速，E代表外部时钟源，I表示内部时钟源
+
+高速时钟源：HSI,HSE,PLL
+
+低速时钟源：LSE,LSI
+
+#### HSI
+
+8MHz
+
+二分频流入到PLL,也可流入到作为系统时钟输入
+
+#### HSE
+
+4-16MHz,外部高速时钟，通过OSC_OUT和OSC_IN两引脚连接外部晶振，通常连接8MHz
+
+可作为系统时钟，作为PLL输入，或二分频作为PLL时钟输入，或128分频作为作为RTC时钟源
+
+#### LSE
+
+外部低速时钟，连接外部低速晶振32.768KHz
+
+可作为RTC的时钟源
+
+#### LSI
+
+低速内部，
+
+可作为独立看门狗和RTC的时钟源
+
+#### PLL
+
+PLL锁相环，通过PLLMUL锁相环
+
+![image-20241121233214576](.\img\image-20241121233214576.png)
+
+通过PLLSRC选项器选择通过哪个时钟源，再通过倍频器获得增倍的频率，
+
+------
+
+![image-20241121233421665](.\img\image-20241121233421665.png)
+
+通过选项器得到系统时钟，目前最大是72MHz
+
+------
+
+![image-20241121234500451](.\img\image-20241121234500451.png)
+
+MCO为时钟输出引脚，通过选择器选择一个时钟信号输出，给外部外设提供时钟频率来源
+
+------
+
+![image-20241121234713307](.\img\image-20241121234713307.png)
+
+通过PLLCLK提供USB接口时钟来源
+
+------
+
+#### SYSCLK
+
+为系统时钟，通常选择PLLCLK得到高速时钟源作为系统时钟
+
+------
+
+#### AHB分频器
+
+![image-20241121234948020](.\img\image-20241121234948020.png)
+
+通过AHB分频器提供时钟源给各个部分提供时钟
+
+------
+
+若不依靠外部时钟，依靠内部HSI用于PLL时钟的输入时，系统能得到的最大频率时64MHz
+
+用户可通过多个预分频器配置AHB、高速APB(APB2)和低速APB(APB1)域的频率。AHB和APB2域的最大频率是72MHz。APB1域的最大允许频率是36MHz。SDIO接口的时钟频率固定为HCLK/2。RCC通过AHB时钟(HCLK)8分频后作为Cortex系统定时器(SysTick)的外部时钟。通过对SysTick控制与状态寄存器的设置，可选择上述时钟或Cortex(HCLK)时钟作为SysTick时钟。ADC时钟由高速APB2时钟经2、4、6或8分频后获得。
+
+------
+
+### 时钟配置函数
+
+#### 1、时钟初始化配置函数
+
+```
+void SystemInit(void)
+```
+
+![image-20241121235747580](.\img\image-20241121235747580.png)
+
+#### 2、外设时钟使能配置函数
+
+```
+void RCC_AHBPeriphClockCmd(uint32_t RCC_AHBPeriph, FunctionalState NewState)
+void RCC_APB2PeriphClockCmd(uint32_t RCC_AHBPeriph, FunctionalState NewState)
+void RCC_APB1PeriphClockCmd(uint32_t RCC_AHBPeriph, FunctionalState NewState)
+```
+
+![image-20241122000359091](.\img\image-20241122000359091.png)
+
+#### 3、时钟源使能函数
+
+```
+void RCC_HSICmd (FunctionalState NewState);
+void RCC_LSICmd(FunctionalState NewState);
+void RCC_PLLCmd(FunctionalState NewState);
+void RCC_RTCCLKCmd(FunctionalState NewState);
+```
+
+![image-20241122000256584](.\img\image-20241122000256584.png)
+
+#### 4、时钟源和倍频因子配置函数
+
+就是时钟树中的选择器
+
+```
+RCC_HSEConfig (RCC_HSE_ON) ;
+RCC_SYSCLKConfig (RCC_SYSCLKSource_HSE) ;
+RCC_HCLKConfig (RCC_SYSCLK_Div1) ;
+RCC_PCLK1Config(RCC_HCLK_Div2);
+RCC_PCLK2Config (RCC_HCLK_Div1) ;
+```
+
+![image-20241122000556220]( .\img\image-20241122000556220.png)
+
+#### 5、外设时钟复位函数
+
+```
+void RCC_APB1PeriphResetCmd(uint32_t RCC_APB1Periph,FunctionalState NewState)
+void RCC_APB2PeriphResetCmd(uint32_t RCC_APB2Periph,FunctionalState NewState)
+```
+
+![image-20241122000715698](.\img\image-20241122000715698.png)
+
+------
+
+### 自定义系统时钟
+
+通过软件自定义系统时钟,格式时固定的
+
+第一个参数是设置**时钟来源**，第二个参数是**倍频系数**
+
+```
+void RCC_HSE_Config(u32 div,u32 pllm）//自定义系统时间（可以修改时钟)
+{
+	RCC_DeInit();//将外设RCC寄存器重设为缺省值
+	RCC_HSEConfig(RCC_HSE_ON);//设置外部高速晶振（HSE)
+	if(RCC_WaitForHSEStartUp()==SUCCESS）//等待HSE起振
+	{
+		RCC_HCLKConfig(RCC_SYSCLK_Div1);//设置AHB时钟（HCLK)
+		RCC_PCLK1Config(RCC_HCLK_Div2);//设置低速AHB时钟（PCLK1）
+		RCC_PCLK2Config(RCC_HCLK_Div1);//设置高速AHB时钟（PCLK2）
+		RCC_PLLConfig(div,pllm);//设置PLL时钟源及倍频系数
+		RCC_PLLCmd(ENABLE)；//使能或者失能PLL
+		while(RCC_GetFlagStatus(RCC_FLAG_PLLRDY)==RESET);//检查指定的RCC标志位设置与否,PLL就绪
+		RCC_SYSCLKConfig (RCC_SYSCLKSource_PLLCLK);//设置系统时钟 (SYSCLK)
+		while(RCC_GetSYSCLKSource()!=Ox08);//返回用作系统时钟的时钟源,Ox08：PLL作为系统时钟
+	}
+}
+```
+
