@@ -1,9 +1,10 @@
 .\obj\main.o: User\main.c
-.\obj\main.o: User\stm32f10x.h
+.\obj\main.o: .\Public\system.h
+.\obj\main.o: .\User\stm32f10x.h
 .\obj\main.o: .\Libraries\CMSIS\core_cm3.h
 .\obj\main.o: D:\MKD528\CORE\ARM\ARMCC\Bin\..\include\stdint.h
 .\obj\main.o: .\Libraries\CMSIS\system_stm32f10x.h
-.\obj\main.o: User\stm32f10x_conf.h
+.\obj\main.o: .\User\stm32f10x_conf.h
 .\obj\main.o: .\Libraries\STM32F10x_StdPeriph_Driver\inc\stm32f10x_adc.h
 .\obj\main.o: .\User\stm32f10x.h
 .\obj\main.o: .\Libraries\STM32F10x_StdPeriph_Driver\inc\stm32f10x_bkp.h

@@ -7,6 +7,9 @@
 #define LED0_PIN GPIO_Pin_13
 #define LED0_PORT_RCC RCC_APB2Periph_GPIOC
 
+#define LED0 PCout(13)
+
+
 void LED_Init(void);
 
 #endif

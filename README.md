@@ -758,21 +758,311 @@ void RCC_APB2PeriphResetCmd(uint32_t RCC_APB2Periph,FunctionalState NewState)
 第一个参数是设置**时钟来源**，第二个参数是**倍频系数**
 
 ```
-void RCC_HSE_Config(u32 div,u32 pllm）//自定义系统时间（可以修改时钟)
+void RCC_HSE_Config(u32 div,u32 pllm)//自定义系统时间（可以修改时钟)
 {
 	RCC_DeInit();//将外设RCC寄存器重设为缺省值
 	RCC_HSEConfig(RCC_HSE_ON);//设置外部高速晶振（HSE)
-	if(RCC_WaitForHSEStartUp()==SUCCESS）//等待HSE起振
+	if(RCC_WaitForHSEStartUp()==SUCCESS) //等待HSE起振
 	{
 		RCC_HCLKConfig(RCC_SYSCLK_Div1);//设置AHB时钟（HCLK)
 		RCC_PCLK1Config(RCC_HCLK_Div2);//设置低速AHB时钟（PCLK1）
 		RCC_PCLK2Config(RCC_HCLK_Div1);//设置高速AHB时钟（PCLK2）
 		RCC_PLLConfig(div,pllm);//设置PLL时钟源及倍频系数
-		RCC_PLLCmd(ENABLE)；//使能或者失能PLL
+		RCC_PLLCmd(ENABLE);//使能或者失能PLL
 		while(RCC_GetFlagStatus(RCC_FLAG_PLLRDY)==RESET);//检查指定的RCC标志位设置与否,PLL就绪
 		RCC_SYSCLKConfig (RCC_SYSCLKSource_PLLCLK);//设置系统时钟 (SYSCLK)
-		while(RCC_GetSYSCLKSource()!=Ox08);//返回用作系统时钟的时钟源,Ox08：PLL作为系统时钟
+		while(RCC_GetSYSCLKSource()!=0x08);//返回用作系统时钟的时钟源,0x08：PLL作为系统时钟
 	}
 }
 ```
+
+#### RCC_PLLConfig(div,pllm);//设置PLL时钟源及倍频系数
+
+![image-20241122221912716](.\img\image-20241122221912716.png)
+
+点击函数跳转到定义
+
+##### div参数设置时钟源
+
+![image-20241122222001827](.\img\image-20241122222001827.png)
+
+找到时钟源函数跳转到定义
+
+通过参数选择分频系数,包含HSI 二分频，HSE一分频，HSE二分频
+
+![image-20241122222105499](.\img\image-20241122222105499.png)
+
+pllm参数设置倍频系数,
+
+![image-20241122222349758](.\img\image-20241122222349758.png)
+
+跳转函数选择倍频系数
+
+![image-20241122222608151](.\img\image-20241122222608151.png)
+
+#### main.c函数
+
+对该函数配置参数，通过改变函数参数即改变系统时钟源的配品系数和时钟来源，延时(通过循环递减延时)LED亮灭闪烁的快慢，可以知道这个函数对系统时钟的有效性
+
+![image-20241122223659916](.\img\image-20241122223659916.png)
+
+## STM32位带操作
+
+为什么要用位带，位带操作允许对单个比特（bit）进行读写，而不是只能对整个字节（Byte）进行操作。在常规的内存访问中，通常是按字节、字（多个字节，如 32 位系统中的 4 字节）等来访问内存。但在支持位带操作的 SRAM 区域中，可以直接对内存中的某一位进行读写。
+
+![image-20241122225115611](.\img\image-20241122225115611.png)
+
+### 位带操作
+
+支持位带操作的区域SRAM**（静态随机存取存储器）**,Peripheral**（外设）**，通过操作**位带别名区**去访问位带区
+
+#### 一、位带区于位带别名区地址转换
+
+上图有地址
+
+1.外设位带别名区地址
+
+```
+AliasAddr=0x42000000+（A-0x40000000)*8*4 +n*4
+A:位带区的某个地址
+0x40000000：位带区起始地址
+*4:四个字节
+*8:每个字节八位
+即放大32倍
+n:某一个管脚，代表在A地址的序列号
+*4:膨胀四个字节
+```
+
+![image-20241122230133911](.\img\image-20241122230133911.png)
+
+2.SRAM位带别名区地址
+
+```
+AliasAddr=0x22000000+（A-0x20000000)*8*4 +n*4
+同上
+```
+
+![image-20241122230242143](.\img\image-20241122230242143.png)
+
+将以上别名区统一为一个公式
+
+```
+#define BITBAND(addr,bitnum) (addr &0xF0000000)+0x2000000+((addr &0xFFFFF)<<5)+(bitnum<<2))
+addr:所求的位带区地址
+(addr&0xF0000000)+0x2000000:为了区分是外设还是SRAM,因为它们主要是起始4和2区别
+(addr &0xFFFFF)<<5):因为最大不会超过0x43FFFFF或0x23FFFFF，向左移动五个位，即2^5=32倍
+bitnum:序列，2^2等同于n*4
+```
+
+![image-20241122231149723](.\img\image-20241122231149723.png)
+
+通过宏定义方式获得存储器地址
+
+```
+#define MEM_ADDR(addr)   *((volatile unsigned long *) (addr))
+通过指针类型访问这个地址，通过调用这个宏，将addr这个地址传递进来
+
+```
+
+![image-20241122232634362](.\img\image-20241122232634362.png)
+
+```
+#define BIT_ADDR(addr, bitnum)  MEM_ADDR (BITBAND(addr, bitnum))
+对实际位操作的定义，通过这个宏得到位带区地址，和地址序列
+```
+
+#### 二、位带操作的有优点
+
+1.控制GPIO口输入输出非常简单
+
+```
+比如通过以上封装宏，重新访问位重新命名led1，led1对应的是ODR寄存器输出，即led=1,即为输出高电平，led=!led作为切换
+```
+
+
+
+2.操作串行接口芯片非常方便（DS1302，74HC595等）
+
+
+
+3.代码简洁，阅读方便
+
+#### 三、软件设计
+
+创建Public文件夹，放入位带操作的相关代码，这个文件称之为系统文件
+
+##### system.h
+
+```c
+#ifndef _SYSTEM_H
+#define _SYSTEM_H
+
+#include "stm32f10x.h"
+
+//IO 口操作宏定义
+#define BITBAND(addr, bitnum) ((addr & 0xF0000000)+0x2000000+((addr&0xFFFFF)<<5)+(bitnum<<2))
+#define MEM_ADDR(addr) *((volatile unsigned long *)(addr))
+#define BIT_ADDR(addr, bitnum) MEM_ADDR(BITBAND(addr, bitnum))
+//IO 口地址映射
+#define GPIOA_ODR_Addr (GPIOA_BASE+12) //0x4001080C
+#define GPIOB_ODR_Addr (GPIOB_BASE+12) //0x40010C0C
+#define GPIOC_ODR_Addr (GPIOC_BASE+12) //0x4001100C
+#define GPIOD_ODR_Addr (GPIOD_BASE+12) //0x4001140C
+#define GPIOE_ODR_Addr (GPIOE_BASE+12) //0x4001180C
+#define GPIOF_ODR_Addr (GPIOF_BASE+12) //0x40011A0C
+#define GPIOG_ODR_Addr (GPIOG_BASE+12) //0x40011E0C
+
+#define GPIOA_IDR_Addr (GPIOA_BASE+8) //0x40010808
+#define GPIOB_IDR_Addr (GPIOB_BASE+8) //0x40010C08
+#define GPIOC_IDR_Addr (GPIOC_BASE+8) //0x40011008
+#define GPIOD_IDR_Addr (GPIOD_BASE+8) //0x40011408
+#define GPIOE_IDR_Addr (GPIOE_BASE+8) //0x40011808
+#define GPIOF_IDR_Addr (GPIOF_BASE+8) //0x40011A08
+#define GPIOG_IDR_Addr (GPIOG_BASE+8) //0x40011E08
+
+//IO 口操作,只对单一的 IO 口!
+//确保 n 的值小于 16!
+#define PAout(n) BIT_ADDR(GPIOA_ODR_Addr,n) //输出
+#define PAin(n) BIT_ADDR(GPIOA_IDR_Addr,n) //输入
+
+#define PBout(n) BIT_ADDR(GPIOB_ODR_Addr,n) //输出
+#define PBin(n) BIT_ADDR(GPIOB_IDR_Addr,n) //输入
+
+#define PCout(n) BIT_ADDR(GPIOC_ODR_Addr,n) //输出
+#define PCin(n) BIT_ADDR(GPIOC_IDR_Addr,n) //输入
+
+#define PDout(n) BIT_ADDR(GPIOD_ODR_Addr,n) //输出
+#define PDin(n) BIT_ADDR(GPIOD_IDR_Addr,n) //输入
+
+#define PEout(n) BIT_ADDR(GPIOE_ODR_Addr,n) //输出
+#define PEin(n) BIT_ADDR(GPIOE_IDR_Addr,n) //输入
+
+#define PFout(n) BIT_ADDR(GPIOF_ODR_Addr,n) //输出
+#define PFin(n) BIT_ADDR(GPIOF_IDR_Addr,n) //输入
+
+#define PGout(n) BIT_ADDR(GPIOG_ODR_Addr,n) //输出
+#define PGin(n) BIT_ADDR(GPIOG_IDR_Addr,n) //输入
+
+void RCC_HSE_Config(u32 div,u32 pllm);
+
+#endif
+
+```
+
+##### system.c
+
+将时钟函数放入
+
+```
+#include "system.h"
+
+void RCC_HSE_Config(u32 div,u32 pllm)//自定义系统时间（可以修改时钟)
+{
+	RCC_DeInit();//将外设RCC寄存器重设为缺省值
+	RCC_HSEConfig(RCC_HSE_ON);//设置外部高速晶振（HSE)
+	if(RCC_WaitForHSEStartUp()==SUCCESS) //等待HSE起振
+	{
+		RCC_HCLKConfig(RCC_SYSCLK_Div1);//设置AHB时钟（HCLK)
+		RCC_PCLK1Config(RCC_HCLK_Div2);//设置低速AHB时钟（PCLK1）
+		RCC_PCLK2Config(RCC_HCLK_Div1);//设置高速AHB时钟（PCLK2）
+		RCC_PLLConfig(div,pllm);//设置PLL时钟源及倍频系数
+		RCC_PLLCmd(ENABLE);//使能或者失能PLL
+		while(RCC_GetFlagStatus(RCC_FLAG_PLLRDY)==RESET);//检查指定的RCC标志位设置与否,PLL就绪
+		RCC_SYSCLKConfig (RCC_SYSCLKSource_PLLCLK);//设置系统时钟 (SYSCLK)
+		while(RCC_GetSYSCLKSource()!=0x08);//返回用作系统时钟的时钟源,0x08：PLL作为系统时钟
+	}
+}
+
+```
+
+## SysTick系统定时器
+
+通过循环延时是不精确的，通过SysTick系统定时器是精确的
+
+![image-20241123000304426](.\img\image-20241123000304426.png)
+
+1/72MHz/8 = 9M,即1us计数9次
+
+它也能够使用中断事件，配置中断的话，它就是当计数到0会触发中断事件
+
+### 一、SysTick定时器操作
+
+#### SysTick定时器寄存器
+
+通常使用3个寄存器
+
+##### 1.CTRL寄存器
+
+控制状态寄存器
+
+![image-20241123000827602](.\img\image-20241123000827602.png)
+
+```
+最低为0：可读写，使能位
+第二位1：R/W，中断使能位
+第三位2：时钟源选择位
+第十七位16：只有读，当SysTick已经数到了0，该位标记为1
+```
+
+##### 2.LOAD寄存器
+
+重装载寄存器
+
+![image-20241123001356389](.\img\image-20241123001356389.png)
+
+24位寄存器0xFFFFFF为最大值
+
+##### 3.VAL寄存器
+
+当前数值寄存器
+
+![image-20241123001409897](.\img\image-20241123001409897.png)
+
+```
+它读取CTRL寄存器中16位段清楚器其标志
+```
+
+##### 4.CALIB寄存器
+
+CALIB是SysTick定时器的校准数值寄存器
+
+![image-20241123001931275](.\img\image-20241123001931275.png)
+
+目前没用到
+
+### 二、SysTick定时器操作
+
+#### 操作步骤
+
+##### 1 设置SysTick定时器的时钟源
+
+
+
+##### 2.设置SysTick定时器的重装初始值(如果要使用中断的话，就将中断使能打开)
+
+
+
+##### 3.清零SysTick定时器当前计数的值。
+
+
+
+##### 4.打开SysTick定时器
+
+
+
+### 三、软件设计
+
+通过SysTick实现延时函数
+
+时钟源库文件misc.c
+
+#### SysTick.h
+
+
+
+#### SysTick.c
+
+
+
+
 
