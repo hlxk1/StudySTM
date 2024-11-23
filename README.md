@@ -1054,15 +1054,378 @@ CALIB是SysTick定时器的校准数值寄存器
 
 通过SysTick实现延时函数
 
-时钟源库文件misc.c
+时钟源库文件misc.c,没添加一个库文件都要编译（阶段性编译）
+
+![image-20241123151138180](.\img\image-20241123151138180.png)
+
+![image-20241123151646446](.\img\image-20241123151646446.png)
+
+![image-20241123152510141](.\img\image-20241123152510141.png)
+
+在core_cm可以找到SysTick结构体成员寄存器来配置
+
+![image-20241123152900258](.\img\image-20241123152900258.png)
+
+可以看到SysTick内存映射地址通过宏定义SysTick指针指向
+
+#### main.c
+
+```
+#include "system.h"
+#include "led.h"
+#include "systick.h"
+
+
+int main(){
+	SysTick_Init(72);
+	LED_Init();
+	
+	while(1){
+		LED0=!LED0;
+		delay_ms(1000);
+	}
+}
+```
 
 #### SysTick.h
+
+```
+#ifndef _SYSTICK_H
+#define _SYSTICK_H
+
+#include "system.h"
+
+
+void SysTick_Init(u8 SYSCLK);// SYSCLK 表示系统时钟频率如72MHz
+void delay_us(u32 nus);
+void delay_ms(u32 nms);
+#endif
+
+```
 
 
 
 #### SysTick.c
 
+![image-20241123153733004](.\img\image-20241123153733004.png)
 
 
 
+```
+#include "systick.h"
+
+u8 fac_us=0;
+u16 fac_ms=0;
+
+void SysTick_Init(u8 SYSCLK) // SYSCLK 表示系统时钟频率如72MHz
+{ 
+	SysTick_CLKSourceConfig(SysTick_CLKSource_HCLK_Div8);// 配置Systick时钟源72MHz/8div八分频
+	fac_us=SYSCLK/8;   // 如：72/8 = 9 即1us就此
+	fac_ms=fac_us*1000;
+}
+
+void delay_us(u32 nus)
+{
+	u32 temp; // 用来获取CTRL寄存器的值
+	SysTick->LOAD=nus*fac_us; // 重装载值，即为计数值
+	SysTick->VAL=0; // 将当前计数值清零
+	SysTick->CTRL|=0x01; // 为了不影响其他位通过|运算符，让最低为为1使能定时器
+	do
+	{
+		temp=SysTick->CTRL;
+		//temp&(1<<16)即为第十七位，相与结果为1就说明计数结束，就要跳出循环即要！非运算至0
+	}while((temp&0x01)&&!(temp&(1<<16)));
+	SysTick->CTRL&=~(0x1); // 最低位设置为0，关闭使能
+	SysTick->VAL=0; // 将当前计数值清零
+}
+void delay_ms(u32 nms)
+{
+	u32 temp; // 用来获取CTRL寄存器的值
+	SysTick->LOAD=nms*fac_ms; // 重装载值，即为计数值
+	SysTick->VAL=0; // 将当前计数值清零
+	SysTick->CTRL|=0x01; // 为了不影响其他位通过|运算符，让最低为为1使能定时器
+	do
+	{
+		temp=SysTick->CTRL;
+		//temp&(1<<16)即为第十七位，相与结果为1就说明计数结束，就要跳出循环即要！非运算至0
+	}while((temp&0x01)&&!(temp&(1<<16)));
+	SysTick->CTRL&=~(0x1); // 最低位设置为0，关闭使能
+	SysTick->VAL=0; // 将当前计数值清零
+}
+
+```
+
+
+
+```
+void SysTick_Init(u8 SYSCLK) // SYSCLK 表示系统时钟频率如72MHz
+{ 
+	SysTick_CLKSourceConfig(SysTick_CLKSource_HCLK_Div8);// 配置Systick时钟源72MHz/8div八分频
+	fac_us=SYSCLK/8;   // 如：72/8 = 9 即1us就此
+	fac_ms=fac_us*1000;
+}
+该函数中fac_us=SYSCLK/8是为了得到基数值，就是在对应时钟频率(SYSCLK)下1us计数器计数9次
+所以LOAD->的值为nus*fac_us，就是说计时器计数9次才是1us
+```
+
+##### 微秒和毫秒延时
+
+微秒延时可以传递值是16位
+
+毫秒延时传递的值就限制更小了，LOAD最大范围0xFFFFFF，LOAD_max(0XFFFFFF) / fac_ms(9000)= 1864，最大到1.8s
+
+##### 关于重装载值
+
+
+
+![image-20241123160403616](.\img\image-20241123160403616.png)
+
+### 跑马灯实验
+
+有了SysTick定时器，我们就可以通过时间来做流水灯了
+
+![image-20241123162828147](.\img\image-20241123162828147.png)
+
+##### **首先找到网络标号**
+
+![image-20241123163154009](.\img\image-20241123163154009.png)
+
+J11端子通过黄色跳线帽让VCC3.3_LED与VCC3.3相连，使LED模块获得3.3V电压从而能亮
+
+为什么要有跳线帽，因为PA端口引脚不只是连接了LED,还有**数码管SMG**
+
+#### 软件设计
+
+#### led.h
+
+```
+#ifndef _LED_H
+#define _LED_H
+
+#include "stm32f10x.h"
+
+#define LED0_PORT GPIOC
+#define LED0_PIN GPIO_Pin_13
+#define LED0_PORT_RCC RCC_APB2Periph_GPIOC
+
+#define LED0 PCout(13)
+/* LED模块 */
+#define LED1_PORT GPIOA
+#define LED1_PIN GPIO_Pin_0
+#define LED1_PORT_RCC RCC_APB2Periph_GPIOA
+
+#define LED2_PORT GPIOA
+#define LED2_PIN GPIO_Pin_1
+#define LED2_PORT_RCC RCC_APB2Periph_GPIOA
+
+#define LED3_PORT GPIOA
+#define LED3_PIN GPIO_Pin_2
+#define LED3_PORT_RCC RCC_APB2Periph_GPIOA
+
+#define LED4_PORT GPIOA
+#define LED4_PIN GPIO_Pin_3
+#define LED4_PORT_RCC RCC_APB2Periph_GPIOA
+
+#define LED5_PORT GPIOA
+#define LED5_PIN GPIO_Pin_4
+#define LED5_PORT_RCC RCC_APB2Periph_GPIOA
+
+#define LED6_PORT GPIOA
+#define LED6_PIN GPIO_Pin_5
+#define LED6_PORT_RCC RCC_APB2Periph_GPIOA
+
+#define LED7_PORT GPIOA
+#define LED7_PIN GPIO_Pin_6
+#define LED7_PORT_RCC RCC_APB2Periph_GPIOA
+
+#define LED8_PORT GPIOA
+#define LED8_PIN GPIO_Pin_7
+#define LED8_PORT_RCC RCC_APB2Periph_GPIOA
+//位带定义
+#define LED1 PAout(0)
+#define LED2 PAout(1)
+#define LED3 PAout(2)
+#define LED4 PAout(3)
+#define LED5 PAout(4)
+#define LED6 PAout(5)
+#define LED7 PAout(6)
+#define LED8 PAout(7)
+
+// 函数声明
+void LED_Init(void);
+
+#endif
+
+```
+
+
+
+##### 1初始化LED相关GPIO
+
+###### 第一种配置方式，因为都是一个端口下
+
+```
+void LED_Init(){
+	// 结构体定义
+	GPIO_InitTypeDef GPIO_InitStruct;
+	// 开启时钟GPIO挂接的时钟
+	RCC_APB2PeriphClockCmd(LED0_PORT_RCC, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+	// GPIO结构体配置
+	GPIO_InitStruct.GPIO_Mode=GPIO_Mode_Out_PP;
+	GPIO_InitStruct.GPIO_Pin=LED0_PIN|LED1_PIN|LED2_PIN|LED3_PIN|LED4_PIN|LED5_PIN|LED6_PIN|LED7_PIN|LED8_PIN;
+	GPIO_InitStruct.GPIO_Speed=GPIO_Speed_50MHz;
+	GPIO_Init(LED0_PORT, &GPIO_InitStruct);
+	GPIO_Init(GPIOA, &GPIO_InitStruct);
+	// 设置高点电平保证灯灭
+	GPIO_SetBits(LED0_PORT,LED0_PIN|LED1_PIN|LED2_PIN|LED3_PIN|LED4_PIN|LED5_PIN|LED6_PIN|LED7_PIN|LED8_PIN);
+	
+}
+```
+
+###### 这是另一种，为了方便移植
+
+```
+#include "led.h"
+/*******************************************************************************
+* 函 数 名 : LED_Init
+* 函数功能 : LED 初始化函数
+* 输 入 : 无
+* 输 出 : 无
+*******************************************************************************/
+void LED_Init(void)
+{
+GPIO_InitTypeDef GPIO_InitStructure;//定义结构体变量
+RCC_APB2PeriphClockCmd(LED0_PORT_RCC,ENABLE);
+RCC_APB2PeriphClockCmd(LED1_PORT_RCC,ENABLE);
+RCC_APB2PeriphClockCmd(LED2_PORT_RCC,ENABLE);
+RCC_APB2PeriphClockCmd(LED3_PORT_RCC,ENABLE);
+RCC_APB2PeriphClockCmd(LED4_PORT_RCC,ENABLE);
+RCC_APB2PeriphClockCmd(LED5_PORT_RCC,ENABLE);
+RCC_APB2PeriphClockCmd(LED6_PORT_RCC,ENABLE);
+RCC_APB2PeriphClockCmd(LED7_PORT_RCC,ENABLE);
+RCC_APB2PeriphClockCmd(LED8_PORT_RCC,ENABLE);
+GPIO_InitStructure.GPIO_Pin=LED0_PIN; //选择你要设置的 IO 口
+GPIO_InitStructure.GPIO_Mode=GPIO_Mode_Out_PP; //设置推挽输出模式
+GPIO_InitStructure.GPIO_Speed=GPIO_Speed_50MHz; //设置传输速率
+GPIO_Init(LED0_PORT,&GPIO_InitStructure); /* 初始化 GPIO */
+GPIO_SetBits(LED0_PORT,LED0_PIN); //将 LED 端口拉高，熄灭所有 LED
+GPIO_InitStructure.GPIO_Pin=LED1_PIN;
+GPIO_Init(LED1_PORT,&GPIO_InitStructure);
+GPIO_SetBits(LED1_PORT,LED1_PIN);
+GPIO_InitStructure.GPIO_Pin=LED2_PIN;
+GPIO_Init(LED2_PORT,&GPIO_InitStructure);
+GPIO_SetBits(LED2_PORT,LED2_PIN);
+GPIO_InitStructure.GPIO_Pin=LED3_PIN;
+GPIO_Init(LED3_PORT,&GPIO_InitStructure);
+GPIO_SetBits(LED3_PORT,LED3_PIN);
+GPIO_InitStructure.GPIO_Pin=LED4_PIN;
+GPIO_Init(LED4_PORT,&GPIO_InitStructure);
+GPIO_SetBits(LED4_PORT,LED4_PIN);
+GPIO_InitStructure.GPIO_Pin=LED5_PIN;
+GPIO_Init(LED5_PORT,&GPIO_InitStructure);
+GPIO_SetBits(LED5_PORT,LED5_PIN);
+GPIO_InitStructure.GPIO_Pin=LED6_PIN;
+GPIO_Init(LED6_PORT,&GPIO_InitStructure);
+GPIO_SetBits(LED6_PORT,LED6_PIN);
+GPIO_InitStructure.GPIO_Pin=LED7_PIN;
+GPIO_Init(LED7_PORT,&GPIO_InitStructure);
+GPIO_SetBits(LED7_PORT,LED7_PIN);
+GPIO_InitStructure.GPIO_Pin=LED8_PIN;
+GPIO_Init(LED8_PORT,&GPIO_InitStructure);
+GPIO_SetBits(LED8_PORT,LED8_PIN);
+}
+//LED 端口 8 位数据同时操作，不影响高位
+//写入数据到 8 位端口，数据低位对应端口低引脚
+//GPIO_Pin：8 位端口低位引脚
+//data：写入数据
+void LED_Write_Data(u16 GPIO_Pin,u8 data)
+{
+u8 i,j=GPIO_Pin;
+for(i=0;i<8;i++)
+{
+if(data&0x01)
+GPIO_WriteBit(GPIOA, j<<i ,Bit_SET);
+else
+GPIO_WriteBit(GPIOA, j<<i ,Bit_RESET);
+data = data >> 1 ;
+}
+}
+```
+
+
+
+##### 2 实现跑马灯函数
+
+GPIO_WriteBit(GPIOA, j<<i ,Bit_SET);
+
+第一位为端口，第二位为引脚，第三位为设置为高低电平
+
+![](.\img\image-20241124012019869.png)
+
+```
+//LED 端口 8 位数据同时操作，不影响高位
+//写入数据到 8 位端口，数据低位对应端口低引脚
+//GPIO_Pin：8 位端口低位引脚
+//data：写入数据
+void LED_Write_Data(u16 GPIO_Pin,u8 data)
+{
+    u8 i,j=GPIO_Pin;
+    for(i=0;i<8;i++)
+    {
+        if(data&0x01)
+        	GPIO_WriteBit(GPIOA, j<<i ,Bit_SET);
+        else
+        	GPIO_WriteBit(GPIOA, j<<i ,Bit_RESET);
+        data = data >> 1 ;
+    }
+}
+```
+
+通过data：来决定输出高电平还是低电平，比较其最低为多少
+
+GPIO_Pin：传入的管脚
+
+![image-20241124012532593](.\img\image-20241124012532593.png)
+
+每个管脚地址就是移动一位的距离所以**通过 j << i 就能切换引脚**，i来控制移到等于哪个管脚的
+
+##### 3 主函数main.c
+
+```
+#include "system.h"
+#include "SysTick.h"
+#include "led.h"
+int main()
+{
+    u8 dat=0x01;
+    u8 i=0;
+    SysTick_Init(72);
+    LED_Init();
+    while(1)
+    {
+        LED_Write_Data(GPIO_Pin_0,~(dat<<i));
+        i++;
+        if(i>=8)i=0;
+        delay_ms(200);
+    }
+}
+```
+
+dat=0x01传入~(dat<<i)取反，如~11111110=00000001，i=0,i++,即八个管脚谁位至1谁熄灭
+
+```c
+void LED_Write_Data(u16 GPIO_Pin,u8 data)
+{
+    u8 i,j=GPIO_Pin;
+    for(i=0;i<8;i++)
+    {
+        if(data&0x01)
+        	GPIO_WriteBit(GPIOA, j<<i ,Bit_SET);
+        else
+        	GPIO_WriteBit(GPIOA, j<<i ,Bit_RESET);
+        data = data >> 1 ;//00000001
+    }
+}
+```
 

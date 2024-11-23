@@ -30,3 +30,4 @@
 .\obj\main.o: .\Libraries\STM32F10x_StdPeriph_Driver\inc\stm32f10x_wwdg.h
 .\obj\main.o: .\Libraries\STM32F10x_StdPeriph_Driver\inc\misc.h
 .\obj\main.o: .\APP\led\led.h
+.\obj\main.o: .\Public\systick.h

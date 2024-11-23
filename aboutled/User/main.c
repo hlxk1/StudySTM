@@ -1,18 +1,17 @@
 #include "system.h"
 #include "led.h"
+#include "systick.h"
 
 
-void delay(u32 i){
-	while(i--);
-}
 int main(){
-	RCC_HSE_Config(RCC_PLLSource_HSE_Div2,RCC_PLLMul_16);
+	SysTick_Init(72);
 	LED_Init();
-	
+	u8 dat=0x01;
+	u8 i=0;
 	while(1){
-		LED0=0;
-		delay(6000000);
-		LED0=!LED0;
-		delay(6000000);
+			LED_Write_Data(GPIO_Pin_0,~(dat<<i));
+			i++;
+			if(i>=8)i=0;
+			delay_ms(500);
 	}
 }
