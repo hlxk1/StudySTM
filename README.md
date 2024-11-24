@@ -1278,8 +1278,8 @@ void LED_Init(){
 	GPIO_Init(LED0_PORT, &GPIO_InitStruct);
 	GPIO_Init(GPIOA, &GPIO_InitStruct);
 	// 设置高点电平保证灯灭
-	GPIO_SetBits(LED0_PORT,LED0_PIN|LED1_PIN|LED2_PIN|LED3_PIN|LED4_PIN|LED5_PIN|LED6_PIN|LED7_PIN|LED8_PIN);
-	
+	GPIO_SetBits(LED0_PORT,LED0_PIN);
+	GPIO_SetBits(GPIOA,LED1_PIN|LED2_PIN|LED3_PIN|LED4_PIN|LED5_PIN|LED6_PIN|LED7_PIN|LED8_PIN);
 }
 ```
 
@@ -1427,5 +1427,133 @@ void LED_Write_Data(u16 GPIO_Pin,u8 data)
         data = data >> 1 ;//00000001
     }
 }
+```
+
+## 蜂鸣器Beep
+
+蜂鸣器是一种采用直流电压供电，广泛应用于电子产品中作为发声器件。
+蜂鸣器主要分为有源和无源两种类型。
+
+有裸露的电子板是无源
+
+![image-20241124143642417](.\img\image-20241124143642417.png)
+
+### 一、硬件设计
+
+```
+我们能否直接使用 STM32 的 IO 口驱动呢？根据 STM32F1 芯片数据手册可知，单个 IO 口的最大输出电流是 25mA，而蜂鸣器的驱动电流是 30mA 左右，两者非常接近，有的人就想直接用 IO 口来驱动，但是有没有考虑到整个芯片的输出电流，整个芯片的输出电流最大也就 150mA，如果在驱动蜂鸣器上就耗掉了 30mA，那么 STM32 其他的IO 口及外设电流就非常拮据了。所以我们不会直接使用 IO 口驱动蜂鸣器，而是通过外部驱动电路后再驱动蜂鸣器，这样 STM32 的 IO 口只需要提供不到 1mA 的电流就可控制蜂鸣器。所以我们也经常说到 STM32 芯片是用来做控制的，而不是驱动。
+```
+
+![image-20241124143837831](.\img\image-20241124143837831.png)
+
+```
+从电路图中可以看到，STM32 芯片的 PB0 引脚是用来控制蜂鸣器的，驱动电路 ULN2003 芯片 OUT5 管脚输出驱动蜂鸣器，ULN2003 芯片使用简单，输入为高电平，输出则为低电平，输入为低电平，输出则为高组态（相当于开路）；输出低电平时蜂鸣器得到电压，高组态时，蜂鸣器断开，只要不断输出一定频率高低电平脉冲信号即可发出声音。
+```
+
+```
+产生声音的方式：
+通过在 STM32 的程序中控制 PB0 引脚不断输出一定频率的高低电平脉冲信号，就能让蜂鸣器在导通和截止状态之间快速切换。例如，如果设置一个合适的频率，比如 1kHz（即每秒切换 1000 次高低电平），蜂鸣器的发声部件（如压电陶瓷片或者电磁线圈等）会因为这种快速的电流变化产生振动，进而发出声音。频率不同，发出的声音音调也会不同，而脉冲信号的占空比等因素还可以影响声音的音色等特性。
+```
+
+### 二、软件设计
+
+
+
+#### 1.框架
+
+##### a.使能蜂鸣器对应GPIO时钟，并初始化相关参数
+
+```
+#include "beep.h"
+
+void Beep_Init()
+{
+		// 结构体定义
+	GPIO_InitTypeDef GPIO_InitStruct;
+	// 开启时钟GPIO挂接的时钟
+	RCC_APB2PeriphClockCmd(BEEP_PORT_RCC, ENABLE);
+	// GPIO结构体配置
+	GPIO_InitStruct.GPIO_Mode=GPIO_Mode_Out_PP;
+	GPIO_InitStruct.GPIO_Pin=BEEP_PIN;
+	GPIO_InitStruct.GPIO_Speed=GPIO_Speed_50MHz;
+	GPIO_Init(BEEP_PORT, &GPIO_InitStruct);
+	// 设置低电平输出高阻态
+	GPIO_ResetBits(BEEP_PORT,BEEP_PIN);
+	
+}
+
+```
+
+##### b.蜂鸣器发声函数
+
+```
+void Beep_Alarm(u8 times,uint8_t us)
+{
+	while(times--)// 高低电平切换次数
+	{
+		BEEP=!BEEP;
+		delay_us(us);//切换一次得秒数即频率
+	}
+}
+
+```
+
+##### c.主函数控制蜂鸣器发声
+
+```
+#include "system.h"
+#include "led.h"
+#include "systick.h"
+#include "beep.h"
+
+int main(){
+	SysTick_Init(72);
+	LED_Init();
+	Beep_Init();
+	while(1){
+		LED0=!LED0;
+		Beep_Alarm(100,100);
+		delay_ms(200);
+	}
+}
+
+```
+
+
+
+# 清楚obj中文件的批处理文件
+
+为了减少内存占用
+
+![image-20241124150215706](.\img\image-20241124150215706.png)
+
+```
+del *.bak /s
+del *.ddk /s
+del *.edk /s
+del *.lst /s
+del *.lnp /s
+del *.mpf /s
+del *.mpj /s
+del *.obj /s
+del *.omf /s
+::del *.opt /s  ::不允许删除JLINK的设置
+del *.plg /s
+del *.rpt /s
+del *.tmp /s
+del *.__i /s
+del *.crf /s
+del *.o /s
+del *.d /s
+del *.axf /s
+del *.tra /s
+del *.dep /s           
+del JLinkLog.txt /s
+
+del *.iex /s
+del *.htm /s
+del *.sct /s
+del *.map /s
+exit
 ```
 
