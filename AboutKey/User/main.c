@@ -14,13 +14,13 @@ int main(){
 	while(1){
 		key=KEY_Scan();
 		if(key==KEY1_Press){
-			LED1=0;
+			LED1=!LED1;
 		}else if(key==KEY2_Press){
-			LED2=0;
+			LED2=!LED2;
 		}else if(key==KEY3_Press){
-			LED3=0;
+			LED3=!LED3;
 		}else if(key==KEY4_Press){
-			LED4=0;
+			LED4=!LED4;
 		}
 		
 	}
